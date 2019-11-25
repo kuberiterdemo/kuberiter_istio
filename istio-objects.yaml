@@ -1,0 +1,171 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: helloworld-gateway
+spec:
+  selector:
+    istio: ingressgateway # use istio default controller
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "*"
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: hello
+spec:
+  host: hello.default.svc.cluster.local
+  subsets:
+  - name: v1
+    labels:
+      version: v1
+  - name: v2
+    labels:
+      version: v2
+  - name: v3
+    labels:
+      version: v3
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: helloworld
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - helloworld-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /hello
+    route:
+    - destination:
+        host: hello.default.svc.cluster.local
+        port:
+          number: 8080
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: http-lua
+spec:
+  workloadLabels:
+    app: myapp
+    version: v1
+  filters:
+  - listenerMatch:
+      portNumber: 9080
+      listenerType: SIDECAR_INBOUND
+    filterName: envoy.lua
+    filterType: HTTP
+    filterConfig:
+      inlineCode: |
+---
+        
+apiVersion: networking.istio.io/v1alpha3
+kind: ServiceEntry
+metadata:
+  name: external-svc-https
+spec:
+  hosts:
+  - api.dropboxapi.com
+  - www.googleapis.com
+  - api.facebook.com
+  location: MESH_EXTERNAL
+  ports:
+  - number: 443
+    name: https
+    protocol: TLS
+  resolution: DNS
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: Sidecar
+metadata:
+  name: default
+spec:
+  egress:
+  - hosts:
+    - "prod-us1/*"
+    - "prod-apis/*"
+    - "istio-system/*"
+---
+apiVersion: authentication.istio.io/v1alpha1
+kind: Policy
+metadata:
+  name: default
+spec:
+  peers:
+  - mtls: {}
+---
+apiVersion: "rbac.istio.io/v1alpha1"
+kind: ServiceRole
+metadata:
+  name: hello-viewer
+  namespace: default
+spec:
+  rules:
+  - services: ["hello.default.svc.cluster.local"]
+    methods: ["GET", "HEAD"]
+---
+apiVersion: "rbac.istio.io/v1alpha1"
+kind: ServiceRole
+metadata:
+  name: world-viewer
+  namespace: default
+spec:
+  rules:
+  - services: ["world.default.svc.cluster.local"]
+    methods: ["GET", "HEAD"]
+---
+apiVersion: "rbac.istio.io/v1alpha1"
+kind: ServiceRole
+metadata:
+  name: world-2-viewer
+  namespace: default
+spec:
+  rules:
+  - services: ["world-2.default.svc.cluster.local"]
+    methods: ["GET", "HEAD"]
+---
+apiVersion: "rbac.istio.io/v1alpha1"
+kind: ServiceRoleBinding
+metadata:
+  name: istio-ingress-binding
+  namespace: default
+spec:
+  subjects:
+  - properties:
+      source.namespace: "istio-system"
+  roleRef:
+    kind: ServiceRole
+    name: "hello-viewer"
+---
+apiVersion: "rbac.istio.io/v1alpha1"
+kind: ServiceRoleBinding
+metadata:
+  name: hello-user-binding
+  namespace: default
+spec:
+  subjects:
+  - user: "cluster.local/ns/default/sa/hello"
+  roleRef:
+    kind: ServiceRole
+    name: "world-viewer"
+---
+apiVersion: "rbac.istio.io/v1alpha1"
+kind: ServiceRoleBinding
+metadata:
+  name: world-user-binding
+  namespace: default
+spec:
+  subjects:
+  - user: "cluster.local/ns/default/sa/world"
+  roleRef:
+    kind: ServiceRole
+    name: "world-2-viewer"
+---
